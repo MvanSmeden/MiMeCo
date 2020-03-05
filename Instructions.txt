@@ -1,0 +1,73 @@
+# SGE
+
+# ==========================================================================================
+# PRELIMINARIES
+# Change paths! ==========================================================================================
+
+qlogin
+module load R/3.5.0
+R
+# readLines('/usr/local/JAGS/JAGS-4.3.0/include/JAGS/Console.h')
+Sys.setenv(JAGS_INCLUDEDIR="/usr/local/JAGS/JAGS-4.3.0/include")
+Sys.setenv(JAGS_LIBDIR="/usr/local/JAGS/JAGS-4.3.0/lib")
+install.packages("rjags",configure.args="--enable-rpath",lib='')
+install.packages('mice',lib='')
+install.packages('lavaan',lib='')
+install.packages('zoo',lib='')
+devtools::install_github("LindaNab/mecor",lib='',force=TRUE)
+.libPaths("")
+#library(rjags)
+q()
+n
+exit
+
+for i in $(ls path); do dos2unix path$i; done
+
+# ==========================================================================================
+# ARGUMENTS FOR BATCH 1 (RUNS 1:100000)
+# ==========================================================================================
+
+# REPLACE 100000/B (B FOR BLOCK SIZE) WITH SOME INTEGER > 1 (FOR B=10, REQUEST ROUGHLY 10 MIN):
+for B in {10..10}; do for i in {1..100000/B}; do qsub -l h_vmem=2g,h_rt=00:10:00 -v i=$i,B=$B path/arg_exe_SGE.sh; done; done
+qstat -u ID # ID = id name
+qstat -u ID | grep " R " | wc -l
+
+qlogin
+module load R/3.5.0
+R
+B <- 10 ### CHANGE IF NECESSARY!
+fn <- function(i){
+	cat(i,'\r'); flush.console()
+	dr <- paste0('/exports/clinicalepi/Bas/MvS/arg_out_SGE/',i,'.csv')
+	if(file.exists(dr)) return(length(readLines(paste0('/exports/clinicalepi/Bas/MvS/arg_out_SGE/',i,'.csv')))-1L)
+	else return(0L)
+}
+a <- sapply(seq_len(100000/B),fn)
+w <- (seq_len(100000/B))[which(a!=B)]
+write(paste(w,collapse='\n'),file='/exports/clinicalepi/Bas/MvS/remaining.txt')
+q()
+n
+exit
+# CHANGE TIME ACCORDING TO B:
+for B in {10..10}; do for i in $(cat path/remaining.txt); do do qsub -l h_vmem=2g,h_rt=00:20:00 -v i=$i,B=$B path/arg_exe_SGE.sh; done; done
+ls path/arg_out_SGE | wc -l
+du -h path/arg_out_SGE
+
+qlogin
+module load R/3.5.0
+R
+B <- 10 ### CHANGE IF NECESSARY!
+fn <- function(i){
+	dr <- paste0('path/arg_out_SGE/',i,'.csv')
+	if(file.exists(dr)) out <- read.table(dr,sep=',',header=TRUE)
+	else out <- NA
+	cat(i,'\r'); flush.console()
+	return(out)
+}
+tmp <- lapply(seq_len(100000/B),fn)
+results <- do.call(rbind,tmp)
+save(results,file='path/args.RData')
+save(results,file='path/args_batch1.RData')
+q()
+n
+exit
